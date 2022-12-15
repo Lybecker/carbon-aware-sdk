@@ -18,6 +18,8 @@ public class LocationSource : ILocationSource
 
     private IDictionary<string, NamedGeoposition> _namedGeopositions;
 
+    private IDictionary<string, Location> _allLocations;
+
     private static readonly JsonSerializerOptions _options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     private IOptionsMonitor<LocationDataSourcesConfiguration> _configurationMonitor { get; }
@@ -34,6 +36,7 @@ public class LocationSource : ILocationSource
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _configurationMonitor = monitor ?? throw new ArgumentNullException(nameof(monitor));
         _namedGeopositions = new Dictionary<string, NamedGeoposition>(StringComparer.InvariantCultureIgnoreCase);
+        _allLocations = new Dictionary<string, Location>(StringComparer.InvariantCultureIgnoreCase);
     }
 
     public async Task<Location> ToGeopositionLocationAsync(Location location)
@@ -41,15 +44,18 @@ public class LocationSource : ILocationSource
         await LoadLocationFromFileIfNotPresentAsync();
 
         var name = location.Name ?? string.Empty;
-        if (!_namedGeopositions.ContainsKey(name))
+        if (!_allLocations.ContainsKey(name))
         {
             throw new ArgumentException($"Unknown Location: '{name}' not found");
         }
+         _namedGeopositions[name].AssertValid(name);
+        return _allLocations[name];
+    }
 
-        var geopositionLocation = _namedGeopositions[name];
-        geopositionLocation.AssertValid(name);
-
-        return (Location) geopositionLocation;
+    public async Task<IDictionary<string, Location>> GetAllGeopositionLocationsAsync()
+    {
+        await LoadLocationFromFileIfNotPresentAsync();
+        return _allLocations;
     }
 
     private async Task LoadLocationJsonFileAsync()
@@ -63,7 +69,7 @@ public class LocationSource : ILocationSource
             foreach (var locationName in locationMapping.Keys) 
             {
                 var key = BuildKey(source, locationName);
-                AddToDictionary(key, locationMapping[locationName], source.DataFileLocation, keyCounter);
+                AddToDictionaries(key, locationMapping[locationName], source.DataFileLocation, keyCounter);
             }
         }
     }
@@ -107,16 +113,16 @@ public class LocationSource : ILocationSource
         return files.Select(x => x.Substring(pathCombined.Length + 1)).Select(n => new LocationSourceFile { DataFileLocation = n });
     }
 
-    private void AddToDictionary(string key, NamedGeoposition data, string sourceFile, Dictionary<string, int> keyCounter)
+    private void AddToDictionaries(string key, NamedGeoposition data, string sourceFile, Dictionary<string, int> keyCounter)
     {
-        if (_namedGeopositions.TryAdd(key, data))
+        if (_namedGeopositions.TryAdd(key, data) && _allLocations.TryAdd(key, (Location) data))
         {
             keyCounter.Add(key, 0);
             return;
         }
         _logger.LogWarning("Location key {key} from {sourceFile} already exists", key, sourceFile);
         var (newKey, counter) = GenKeyAndCounter(key, keyCounter);
-        if (!_namedGeopositions.TryAdd(newKey, data))
+        if (!_namedGeopositions.TryAdd(newKey, data) || !_allLocations.TryAdd(newKey, (Location) data))
         {
             _logger.LogError($"New Location key {newKey} already exists", newKey);
             return;
