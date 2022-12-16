@@ -8,19 +8,23 @@ internal sealed class LocationHandler : ILocationHandler
 {
     private readonly ILocationSource _locationSource;
 
+    private IDictionary<string, Location> _allLocations;
+
     public LocationHandler(ILocationSource source)
     {
         _locationSource = source;
+        _allLocations = new Dictionary<string, Location>();
     }
  
     public async Task<IDictionary<string, Location>> GetAllLocationsAsync()
     {
-       var allLocs = await _locationSource.GetAllGeopositionLocationsAsync();
-       var dictionary = new Dictionary<string, Location>();
-       foreach (KeyValuePair<string, global::CarbonAware.Model.Location> elem in allLocs)
-       {
-            dictionary.Add(elem.Key, (Location) elem.Value);
-       }
-       return dictionary;
+        if (!_allLocations.Any())
+        {
+            foreach (KeyValuePair<string, global::CarbonAware.Model.Location> elem in  await _locationSource.GetAllGeopositionLocationsAsync())
+            {
+                _allLocations.Add(elem.Key, (Location) elem.Value);
+            }
+        }
+       return _allLocations;
     }
 }
